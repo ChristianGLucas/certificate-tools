@@ -68,7 +68,7 @@ message Certificate {
   DistinguishedName issuer = 6;
   string not_before = 7; // RFC 3339 UTC, e.g. "2026-01-01T00:00:00Z"
   string not_after = 8;
-  string signature_algorithm = 9; // e.g. "SHA256withRSA", "ecdsa-with-SHA256", "Ed25519"
+  string signature_algorithm = 9; // e.g. "SHA-256withRSA", "SHA-256withECDSA", "Ed25519"
   PublicKeyInfo public_key = 10;
 }
 

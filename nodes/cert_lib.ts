@@ -254,7 +254,7 @@ export function isoUtc(date: Date): string {
 
 // ---- Full Certificate message (shared by ParseCertificate and ParseChain) -------------
 
-function describeSignatureAlgorithm(alg: { name?: string; hash?: { name?: string } }): string {
+export function describeSignatureAlgorithm(alg: { name?: string; hash?: { name?: string } }): string {
   if (!alg || !alg.name) return 'UNKNOWN';
   if (alg.hash && alg.hash.name) return `${alg.hash.name}with${sigShortName(alg.name)}`;
   return alg.name;
