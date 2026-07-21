@@ -1,0 +1,61 @@
+name: christiangeorgelucas/certificate-tools
+version: 0.1.0
+language: typescript
+description: Deterministic, offline parsing and structural inspection of X.509 certificates, PKCS#10 certificate signing requests, certificate chains, and PEM bundles, wrapping @peculiar/x509 (MIT, pure TypeScript over WebCrypto — the full runtime dependency tree is MIT/BSD-3-Clause/0BSD, no copyleft, no native code). Every certificate/CSR is supplied by the caller as PEM text or base64 DER — this package NEVER dials a host, fetches a URL, or performs an OCSP/CRL lookup; it inspects only the material it is given. Any validity/expiry check compares against a CALLER-SUPPLIED `now_unix_seconds` and never reads the system clock, so results are fully deterministic and reproducible. Self-signed detection and chain-linkage checks are PURE STRUCTURAL checks (does the issuer DN match, does a signature verify against a cert's own key) — they are explicitly NOT trust validation, which would require a trust store and network revocation checks this package deliberately never touches. Malformed PEM/DER/ASN.1 input returns a structured error, never a crash or hang; input is bounded before parsing.
+nodes:
+    - name: ParseCertificate
+      input: CertificateInput
+      output: Certificate
+      description: Parse a PEM or DER X.509 certificate into its full structured fields — version, serial number (hex), subject and issuer Distinguished Names (both RFC 4514 string form and structured attribute/value pairs), validity period (notBefore/notAfter, RFC 3339 UTC), signature algorithm, and the decoded public key (algorithm, size in bits, named curve for EC keys, and the SubjectPublicKeyInfo as PEM). Malformed input returns ok=false with a structured error rather than throwing. Input is bounded to 1 MiB.
+    - name: ExtractSans
+      input: CertificateInput
+      output: SanResult
+      description: Extract a certificate's Subject Alternative Name (SAN) extension, split by GeneralName type — DNS names, IP addresses (v4/v6, textual form), RFC 822 email addresses, and URIs, plus a stringified catch-all for rarer forms (directoryName, registeredID, otherName). present=false (not an error) when the certificate carries no SAN extension.
+    - name: ComputeFingerprint
+      input: CertificateInput
+      output: FingerprintResult
+      description: Compute the SHA-1 and SHA-256 fingerprint (digest of the certificate's raw DER encoding) — the standard identifier used for certificate pinning, trust-store lookups, and "is this the cert I expect" comparisons. Returns each digest as both lowercase hex and standard base64.
+    - name: CheckValidity
+      input: ValidityInput
+      output: ValidityResult
+      description: Check a certificate's validity period against a CALLER-SUPPLIED `now_unix_seconds` (Unix seconds, UTC) — this node NEVER reads the system clock, so the result is fully deterministic and reproducible for any point in time, past or future. Reports expired, not_yet_valid, an overall valid flag, and days_remaining (negative once expired).
+    - name: ExtractKeyUsage
+      input: CertificateInput
+      output: KeyUsageResult
+      description: Extract a certificate's Key Usage and Extended Key Usage extensions — the bits governing what the key/certificate may legitimately be used for (digitalSignature, keyEncipherment, keyCertSign, serverAuth, clientAuth, codeSigning, etc.), each with its criticality flag. Extended Key Usage OIDs are resolved to a friendly name where recognized, else returned as the raw dotted OID. present=false (not an error) when the extension is absent.
+    - name: ExtractBasicConstraints
+      input: CertificateInput
+      output: BasicConstraintsResult
+      description: Extract a certificate's Basic Constraints extension — is_ca (whether this certificate may itself sign other certificates) and, when present, the pathLenConstraint bounding how many intermediate CAs may follow it in a chain. present=false (not an error) when the extension is absent, which per RFC 5280 means the certificate is implicitly treated as an end-entity (not a CA).
+    - name: ExtractExtensions
+      input: CertificateInput
+      output: ExtensionsResult
+      description: Extract EVERY X.509v3 extension present on a certificate as a generic, structured entry — OID, recognized friendly name (when known), criticality flag, and the raw extnValue as base64 — including extensions this package has no dedicated node for. The node to reach for when auditing a certificate's full extension set rather than one specific extension.
+    - name: DetectSelfSigned
+      input: CertificateInput
+      output: SelfSignedResult
+      description: Determine whether a certificate is self-signed via a PURE STRUCTURAL check — does its issuer DN equal its subject DN, AND does its own public key cryptographically verify its own signature over its own TBSCertificate. This is NOT trust validation (no trust store, no revocation, no network) — a self-signed cert can still be untrusted, and this node makes no claim about that.
+    - name: ExtractPublicKey
+      input: CertificateInput
+      output: PublicKeyResult
+      description: Extract a certificate's public key on its own — algorithm (RSA/EC/Ed25519/Ed448/DSA or the raw OID when unrecognized), key size in bits, named curve for EC keys, and the SubjectPublicKeyInfo re-encoded as standalone PEM (suitable, for example, as the public-key input to christiangeorgelucas/jwt-tools' VerifySignature node for RS/PS/ES/EdDSA-signed JWTs).
+    - name: ParseCsr
+      input: CsrInput
+      output: CsrResult
+      description: Parse a PKCS#10 Certificate Signing Request (PEM or DER) into its subject Distinguished Name, requested public key, signature algorithm, and whether the CSR's self-signature verifies against its own carried public key (proof of possession) — plus any Subject Alternative Names requested via its extensionRequest attribute. Malformed input returns ok=false with a structured error.
+    - name: SplitPemBundle
+      input: PemBundleInput
+      output: PemBundleResult
+      description: Split a PEM bundle — one text blob containing several concatenated "-----BEGIN ...-----"/"-----END ...-----" blocks, as CAs commonly ship a leaf+intermediates chain or a combined cert+key file — into its individual blocks, each re-wrapped as standalone PEM and bucketed into certificates, private_keys, and other_blocks (CSRs, standalone public keys, CRLs, etc.) by its PEM header label. A pure text/structure operation; no ASN.1 decoding of block contents is performed.
+    - name: ParseChain
+      input: ChainInput
+      output: ChainResult
+      description: Parse an ordered list of certificates and report the chain's structural linkage — for each adjacent pair, whether one's issuer DN matches the next's subject DN — plus the detected ordering (leaf_to_root, root_to_leaf, unordered, single, unknown) and whether every adjacent pair links in that direction. A PURE STRUCTURAL check (DN string equality, no cross-certificate signature re-verification, no trust store) — NOT trust/path validation.
+    - name: ExtractKeyIdentifiers
+      input: CertificateInput
+      output: KeyIdentifiersResult
+      description: Extract a certificate's Subject Key Identifier (SKI) and Authority Key Identifier (AKI, keyIdentifier form) extensions as hex strings — the values used to match a certificate to its issuer's key across a chain independent of DN matching. Each is present=false (not an error) when its extension is absent.
+    - name: SummarizeCertificate
+      input: CertificateInput
+      output: SummaryResult
+      description: Render a certificate as a single human-readable summary line — subject CN (or full subject DN when no CN attribute is present), issuer CN, and the validity period — for logging, audit tables, or a quick-glance display.

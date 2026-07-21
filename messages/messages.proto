@@ -1,0 +1,245 @@
+// This file defines the data contracts (messages) for your Axiom package.
+// Every node's --input and --output refers to a message defined here.
+//
+// Run `axiom create message <Name>` to scaffold a new message below.
+// Run `axiom generate` to compile these definitions into language bindings in gen/.
+//
+// DOCUMENTATION
+//   Comments written directly above a message or field declaration are extracted
+//   automatically at publish time and shown in the Axiom registry as documentation.
+//   Write your descriptions there — no separate doc files needed.
+//
+//   Leading comment  (no blank line before the declaration) → registry description ✓
+//   Detached comment (blank line before the declaration)    → ignored by registry  ✗
+//
+// This file is yours to edit. Axiom only appends new message blocks — it never
+// overwrites or removes content you have written.
+
+syntax = "proto3";
+
+package christiangeorgelucas.certificate_tools;
+
+// A caller-supplied X.509 certificate, given as text — never fetched over the network.
+// Provide EXACTLY ONE of `pem` (a single "-----BEGIN CERTIFICATE-----" block) or
+// `der_base64` (standard base64 of the raw DER bytes). When both are set, `pem` wins.
+message CertificateInput {
+  string pem = 1;
+  string der_base64 = 2;
+}
+
+// One RDN attribute/value pair from a Distinguished Name, in encoded (wire) order.
+message DnAttribute {
+  string oid = 1;        // e.g. "2.5.4.3"
+  string short_name = 2; // e.g. "CN", "O", "OU", "C", "ST", "L" — empty when the OID has no well-known short name
+  string value = 3;
+}
+
+// A Distinguished Name (Subject or Issuer), both as its RFC 4514 string form and
+// broken out into structured attribute/value pairs.
+message DistinguishedName {
+  string raw = 1;                      // RFC 4514 string, e.g. "CN=example.com,O=Example Inc,C=US"
+  repeated DnAttribute attributes = 2; // structured form, in encoded order
+}
+
+// A decoded SubjectPublicKeyInfo.
+message PublicKeyInfo {
+  string algorithm = 1;    // "RSA", "EC", "Ed25519", "Ed448", "DSA", or the raw dotted OID when unrecognized
+  int32 key_size_bits = 2; // RSA modulus bits / EC field size bits; 0 when not determinable
+  string curve = 3;        // named curve for EC keys (e.g. "P-256"); empty for non-EC keys
+  string pem = 4;           // SubjectPublicKeyInfo re-encoded as "-----BEGIN PUBLIC KEY-----" PEM
+}
+
+// The Subject Alternative Name GeneralNames, split by GeneralName type.
+message SubjectAltNames {
+  repeated string dns_names = 1;
+  repeated string ip_addresses = 2;
+  repeated string emails = 3;
+  repeated string uris = 4;
+  repeated string other = 5; // stringified less-common GeneralName forms (directoryName, registeredID, otherName, ...)
+}
+
+// The full structured decode of one parsed X.509 certificate.
+message Certificate {
+  bool ok = 1;
+  string error = 2;
+  int32 version = 3; // 1, 2, or 3 (the certificate's X.509 version field, already +1'd from its wire encoding)
+  string serial_number_hex = 4;
+  DistinguishedName subject = 5;
+  DistinguishedName issuer = 6;
+  string not_before = 7; // RFC 3339 UTC, e.g. "2026-01-01T00:00:00Z"
+  string not_after = 8;
+  string signature_algorithm = 9; // e.g. "SHA256withRSA", "ecdsa-with-SHA256", "Ed25519"
+  PublicKeyInfo public_key = 10;
+}
+
+// SHA-1 and SHA-256 digests of a certificate's raw DER encoding — the standard
+// "certificate fingerprint" used to identify a specific cert (e.g. HPKP/cert pinning UIs).
+message FingerprintResult {
+  bool ok = 1;
+  string error = 2;
+  string sha1_hex = 3;
+  string sha1_base64 = 4;
+  string sha256_hex = 5;
+  string sha256_base64 = 6;
+}
+
+message ValidityInput {
+  CertificateInput certificate = 1;
+  // Caller-supplied "now", Unix seconds (UTC). This node NEVER reads the system clock —
+  // every expiry/validity determination is against this value only.
+  int64 now_unix_seconds = 2;
+}
+
+message ValidityResult {
+  bool ok = 1;
+  string error = 2;
+  bool expired = 3;        // now > not_after
+  bool not_yet_valid = 4;  // now < not_before
+  bool valid = 5;          // !expired && !not_yet_valid
+  string not_before = 6;
+  string not_after = 7;
+  int64 days_remaining = 8; // floor((not_after - now) / 86400); negative once expired
+}
+
+message KeyUsageResult {
+  bool ok = 1;
+  string error = 2;
+  bool present = 3;
+  bool critical = 4;
+  repeated string key_usages = 5; // e.g. "digitalSignature", "keyEncipherment", "keyCertSign", "cRLSign", ...
+  bool eku_present = 6;
+  bool eku_critical = 7;
+  repeated string extended_key_usages = 8; // named where recognized (e.g. "serverAuth", "clientAuth"), else the raw OID
+  bool any_extended_key_usage = 9;         // true when the anyExtendedKeyUsage (2.5.29.37.0) OID is present
+}
+
+message BasicConstraintsResult {
+  bool ok = 1;
+  string error = 2;
+  bool present = 3;
+  bool critical = 4;
+  bool is_ca = 5;
+  bool has_path_len_constraint = 6;
+  int32 path_len_constraint = 7;
+}
+
+// One X.509v3 extension, generically decoded — every certificate extension the
+// parser encounters, whether or not this package has a dedicated node for it.
+message ExtensionEntry {
+  string oid = 1;
+  string name = 2;          // recognized friendly name (e.g. "subjectKeyIdentifier"); empty when unrecognized
+  bool critical = 3;
+  string value_base64 = 4;  // the raw extnValue OCTET STRING content, standard base64
+  string parsed_summary = 5; // best-effort human-readable summary for extensions this package recognizes; empty otherwise
+}
+
+message ExtensionsResult {
+  bool ok = 1;
+  string error = 2;
+  repeated ExtensionEntry extensions = 3;
+}
+
+// A pure STRUCTURAL self-signed check: does the issuer DN equal the subject DN, and
+// does the certificate's own public key validate its own signature? This is NOT trust
+// validation (no trust store, no chain, no revocation/OCSP/CRL — all of which need a
+// network or an operator-supplied trust anchor this package deliberately never touches).
+message SelfSignedResult {
+  bool ok = 1;
+  string error = 2;
+  bool subject_equals_issuer = 3;
+  bool signature_verified = 4; // the cert's own SubjectPublicKeyInfo validates its own signature over its own TBSCertificate
+  bool self_signed = 5;        // subject_equals_issuer && signature_verified
+}
+
+message PublicKeyResult {
+  bool ok = 1;
+  string error = 2;
+  PublicKeyInfo public_key = 3;
+}
+
+message CsrInput {
+  string pem = 1;
+  string der_base64 = 2;
+}
+
+// The structured decode of a PKCS#10 Certificate Signing Request.
+message CsrResult {
+  bool ok = 1;
+  string error = 2;
+  DistinguishedName subject = 3;
+  PublicKeyInfo public_key = 4;
+  string signature_algorithm = 5;
+  bool signature_valid = 6;      // the CSR's self-signature verifies against its own carried public key
+  bool has_requested_sans = 7;
+  SubjectAltNames requested_sans = 8; // SANs requested via the CSR's extensionRequest (1.2.840.113549.1.9.14) attribute, if present
+}
+
+message SanResult {
+  bool ok = 1;
+  string error = 2;
+  bool present = 3;
+  bool critical = 4;
+  SubjectAltNames sans = 5;
+}
+
+// One or more concatenated PEM blocks — a "bundle" file as commonly shipped by CAs
+// (leaf + intermediates) or as a combined cert+key file.
+message PemBundleInput {
+  string pem = 1;
+}
+
+message PemBlock {
+  string label = 1; // the PEM header label, e.g. "CERTIFICATE", "PRIVATE KEY", "RSA PRIVATE KEY", "CERTIFICATE REQUEST", "EC PRIVATE KEY"
+  string pem = 2;    // this block alone, re-wrapped as a standalone PEM document
+}
+
+message PemBundleResult {
+  bool ok = 1;
+  string error = 2;
+  repeated PemBlock certificates = 3;  // label == "CERTIFICATE"
+  repeated PemBlock private_keys = 4;  // label contains "PRIVATE KEY"
+  repeated PemBlock other_blocks = 5;  // everything else (CSRs, public keys, CRLs, ...)
+  int32 total_blocks = 6;
+}
+
+message ChainInput {
+  repeated CertificateInput certificates = 1; // in caller-supplied order — no reordering is performed
+}
+
+// One adjacency check between certificates[from_index] and certificates[to_index].
+message ChainLink {
+  int32 from_index = 1;
+  int32 to_index = 2;
+  bool issuer_matches_subject = 3; // certificates[from_index].issuer == certificates[to_index].subject (raw DN string equality)
+}
+
+// A pure STRUCTURAL chain-linkage report: does each adjacent pair's issuer/subject
+// match, and in which direction. This is NOT trust validation — no signature
+// cryptographically re-verified across the chain, no trust store, no revocation check.
+message ChainResult {
+  bool ok = 1;
+  string error = 2;
+  repeated Certificate certificates = 3; // parsed, in input order
+  repeated ChainLink links = 4;          // one entry per adjacent input pair
+  // "leaf_to_root": each cert's issuer matches the next's subject (input[0] is the leaf).
+  // "root_to_leaf": each cert's issuer matches the PREVIOUS one's subject (input[0] is the root).
+  // "single": exactly one certificate was given. "unordered": neither direction fully links. "unknown": fewer than 1 cert.
+  string detected_ordering = 5;
+  bool fully_linked = 6; // true iff every adjacent pair links in the detected_ordering's direction
+}
+
+message KeyIdentifiersResult {
+  bool ok = 1;
+  string error = 2;
+  bool ski_present = 3;
+  string ski_hex = 4;       // Subject Key Identifier (2.5.29.14)
+  bool aki_present = 5;
+  bool aki_has_key_id = 6;
+  string aki_key_id_hex = 7; // Authority Key Identifier's keyIdentifier field (2.5.29.35), when present
+}
+
+message SummaryResult {
+  bool ok = 1;
+  string error = 2;
+  string summary = 3; // one-line human summary, e.g. "CN=example.com issued by CN=Example CA, valid 2026-01-01 to 2027-01-01"
+}
