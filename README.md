@@ -2,7 +2,7 @@
 
 Deterministic, offline parsing and structural inspection of X.509 certificates,
 PKCS#10 certificate signing requests, certificate chains, and PEM bundles. Built
-for the [Axiom](https://axiom.dev) marketplace under the `christiangeorgelucas`
+for the [Axiom](https://axiomide.com) marketplace under the `christiangeorgelucas`
 handle.
 
 Wraps [`@peculiar/x509`](https://github.com/PeculiarVentures/x509) (MIT) — a pure
