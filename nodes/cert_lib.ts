@@ -22,35 +22,20 @@ import {
   PemBlock,
 } from '../gen/messages_pb';
 
-// ---- Bounds (input → cost) --------------------------------------------------------
-// A single certificate or CSR, PEM or DER. Real-world certs (even with many SANs or a
-// large RSA key) are a few KiB; 1 MiB is generous headroom while still bounding cost.
-export const MAX_CERT_BYTES = 1 * 1024 * 1024;
-// A PEM bundle can legitimately hold a handful of certificates (leaf+intermediates)
-// or a combined cert+key file; 5 MiB comfortably covers any realistic bundle.
-export const MAX_BUNDLE_BYTES = 5 * 1024 * 1024;
-// A caller-supplied chain is a list of whole certificates; bound the list length
-// itself (independent of each certificate's own byte bound) so a pathological
-// caller cannot force parsing thousands of certificates in one call.
-export const MAX_CHAIN_CERTS = 64;
+// Size, byte, and count limits are the platform's job (invoke-payload bound at the
+// request leg), not this package's — a node is a pure input→output function. This
+// module only enforces DOMAIN correctness: is the input well-formed PEM/DER/ASN.1.
 
 export class CertError extends Error {}
 
 // ---- PEM/DER decoding (input → interpretation) -------------------------------------
 
 /** Decode a CertificateInput/CsrInput-shaped (pem, der_base64) pair into a raw DER ArrayBuffer. */
-export function decodeDer(pem: string, derBase64: string, maxBytes = MAX_CERT_BYTES): ArrayBuffer {
+export function decodeDer(pem: string, derBase64: string): ArrayBuffer {
   const hasPem = typeof pem === 'string' && pem.trim().length > 0;
   const hasDer = typeof derBase64 === 'string' && derBase64.trim().length > 0;
   if (!hasPem && !hasDer) {
     throw new CertError('one of pem or der_base64 must be supplied');
-  }
-  if (hasPem && pem.length > maxBytes) {
-    throw new CertError('pem input exceeds the maximum allowed size');
-  }
-  if (hasDer && derBase64.length > maxBytes * 2) {
-    // base64 expands ~4/3; a generous ceiling on the encoded string before we even decode it
-    throw new CertError('der_base64 input exceeds the maximum allowed size');
   }
   try {
     if (hasPem) {
@@ -69,9 +54,6 @@ export function decodeDer(pem: string, derBase64: string, maxBytes = MAX_CERT_BY
     const buf = Buffer.from(derBase64, 'base64');
     if (buf.length === 0) {
       throw new CertError('der_base64 did not decode to any bytes');
-    }
-    if (buf.length > maxBytes) {
-      throw new CertError('decoded DER exceeds the maximum allowed size');
     }
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   } catch (e) {

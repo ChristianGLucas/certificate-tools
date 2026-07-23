@@ -1,6 +1,6 @@
 import { PemBundleInput, PemBundleResult } from '../gen/messages_pb';
 import { AxiomContext } from '../gen/axiomContext';
-import { splitPemBundle as splitPemBundleImpl, MAX_BUNDLE_BYTES, CertError } from './cert_lib';
+import { splitPemBundle as splitPemBundleImpl, CertError } from './cert_lib';
 
 /**
  * Split a PEM bundle — one text blob containing several concatenated
@@ -18,9 +18,6 @@ export function splitPemBundle(ax: AxiomContext, input: PemBundleInput): PemBund
     const pem = input.getPem();
     if (!pem || pem.trim().length === 0) {
       throw new CertError('pem is required');
-    }
-    if (pem.length > MAX_BUNDLE_BYTES) {
-      throw new CertError('pem exceeds the maximum allowed size');
     }
     const blocks = splitPemBundleImpl(pem);
     const certificates = blocks.filter((b) => b.getLabel() === 'CERTIFICATE');

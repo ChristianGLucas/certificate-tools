@@ -22,7 +22,8 @@ transitive dependency tree (no copyleft, no native code).
   trust validation, which would require a trust store and network revocation
   checks this package deliberately never touches.
 - Malformed PEM/DER/ASN.1 input returns a structured error, never a crash or
-  hang; input is bounded before parsing.
+  hang. The platform owns size/resource limits; this package imposes none of
+  its own.
 
 ## Nodes
 

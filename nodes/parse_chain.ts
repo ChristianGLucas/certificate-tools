@@ -1,6 +1,6 @@
 import { ChainInput, ChainResult, ChainLink, Certificate } from '../gen/messages_pb';
 import { AxiomContext } from '../gen/axiomContext';
-import { loadCertificate, buildCertificateMessage, MAX_CHAIN_CERTS, CertError } from './cert_lib';
+import { loadCertificate, buildCertificateMessage, CertError } from './cert_lib';
 
 /**
  * Parse an ordered list of certificates and report the chain's structural linkage —
@@ -18,9 +18,6 @@ export function parseChain(ax: AxiomContext, input: ChainInput): ChainResult {
     const inputs = input.getCertificatesList();
     if (inputs.length === 0) {
       throw new CertError('at least one certificate is required');
-    }
-    if (inputs.length > MAX_CHAIN_CERTS) {
-      throw new CertError(`too many certificates: max ${MAX_CHAIN_CERTS}, got ${inputs.length}`);
     }
 
     const loaded = inputs.map((ci, i) => {
